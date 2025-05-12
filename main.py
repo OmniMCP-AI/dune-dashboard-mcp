@@ -663,4 +663,4 @@ def get_dashboard_data(url: str) -> str:
 if __name__ == "__main__":
     # 立即启动MCP服务器，不等待代理池初始化
     print("Starting Dune Dashboard MCP server...")
-    mcp.run(transport="sse")
+    mcp.run()
