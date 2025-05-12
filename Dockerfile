@@ -11,7 +11,7 @@ RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev curl
 RUN pip install --upgrade pip
 
 # Install Python dependencies
-RUN pip install "mcp[cli]>=1.4.1" pandas>=2.2.3 httpx python-dotenv
+RUN pip install "mcp[cli]>=1.4.1" pandas>=2.2.3 httpx python-dotenv requests beautifulsoup4
 
 # Copy project files
 COPY . .

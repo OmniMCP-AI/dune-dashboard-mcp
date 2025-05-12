@@ -3,6 +3,12 @@ import json
 import pandas as pd
 import subprocess
 import os
+import requests
+import random
+import time
+import threading
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
@@ -12,7 +18,7 @@ load_dotenv()
 mcp = FastMCP(
     name="Dune Dashboard MCP",
     description="Retrieve raw data from Dune dashboards",
-    dependencies=["pandas", "python-dotenv"],
+    dependencies=["pandas", "python-dotenv", "requests", "beautifulsoup4"],
 )
 
 # API endpoints
@@ -154,7 +160,142 @@ GET_EXECUTION_QUERY = """query GetLatestResultSetIds($canRefresh: Boolean!, $que
     }
 }"""
 
-def run_curl_command(url, data, is_json=True):
+class FreeProxyPool:
+    def __init__(self):
+        self.proxies = set()
+        self.working_proxies = set()
+        self.lock = threading.Lock()
+        self.test_url = "https://httpbin.org/ip"  # 用来测试代理
+        
+    def fetch_free_proxy_list(self):
+        """从free-proxy-list.net获取免费代理"""
+        try:
+            response = requests.get('https://free-proxy-list.net/')
+            soup = BeautifulSoup(response.text, 'html.parser')
+            table = soup.find('table', {'id': 'proxylisttable'})
+            
+            for row in table.tbody.find_all('tr'):
+                cells = row.find_all('td')
+                ip = cells[0].text
+                port = cells[1].text
+                https = cells[6].text
+                
+                if https.lower() == 'yes':
+                    proxy = f"https://{ip}:{port}"
+                else:
+                    proxy = f"http://{ip}:{port}"
+                
+                with self.lock:
+                    self.proxies.add(proxy)
+            
+            print(f"Added {len(self.proxies)} proxies from free-proxy-list")
+        except Exception as e:
+            print(f"Error fetching from free-proxy-list: {e}")
+    
+    def fetch_geonode_proxies(self):
+        """从Geonode获取免费代理"""
+        try:
+            url = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            
+            for proxy in data.get('data', []):
+                ip = proxy.get('ip')
+                port = proxy.get('port')
+                protocol = proxy.get('protocols')[0].lower() if proxy.get('protocols') else 'http'
+                
+                proxy_str = f"{protocol}://{ip}:{port}"
+                with self.lock:
+                    self.proxies.add(proxy_str)
+                    
+            print(f"Added proxies from Geonode, total: {len(self.proxies)}")
+        except Exception as e:
+            print(f"Error fetching from Geonode: {e}")
+
+    def fetch_proxyscrape_proxies(self):
+        """从ProxyScrape获取免费代理"""
+        try:
+            url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                proxy_list = response.text.strip().split("\r\n")
+                for proxy in proxy_list:
+                    if proxy:
+                        with self.lock:
+                            self.proxies.add(f"http://{proxy}")
+                print(f"Added proxies from ProxyScrape, total: {len(self.proxies)}")
+        except Exception as e:
+            print(f"Error fetching from ProxyScrape: {e}")
+    
+    def check_proxy(self, proxy):
+        """检查代理是否可用"""
+        try:
+            proxies = {
+                'http': proxy,
+                'https': proxy,
+            }
+            response = requests.get(self.test_url, proxies=proxies, timeout=5)
+            
+            if response.status_code == 200:
+                with self.lock:
+                    self.working_proxies.add(proxy)
+                    print(f"Working proxy found: {proxy}")
+                return True
+        except:
+            pass
+        return False
+    
+    def verify_proxies(self):
+        """验证所有代理的可用性"""
+        print(f"Verifying {len(self.proxies)} proxies...")
+        
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            executor.map(self.check_proxy, list(self.proxies))
+            
+        print(f"Verification complete. Working proxies: {len(self.working_proxies)}")
+    
+    def get_proxy(self):
+        """获取一个随机可用代理"""
+        with self.lock:
+            if not self.working_proxies:
+                return None
+            return random.choice(list(self.working_proxies))
+    
+    def refresh(self):
+        """刷新代理池"""
+        with self.lock:
+            self.proxies.clear()
+            self.working_proxies.clear()
+        
+        self.fetch_free_proxy_list()
+        self.fetch_geonode_proxies()
+        self.fetch_proxyscrape_proxies()
+        # 添加更多代理源...
+        
+        self.verify_proxies()
+        
+    def maintain_pool(self, interval=1800):
+        """定期维护代理池"""
+        while True:
+            try:
+                print("Refreshing proxy pool...")
+                self.refresh()
+                print(f"Proxy pool refreshed. Sleeping for {interval} seconds...")
+                time.sleep(interval)  # 每30分钟刷新一次
+            except Exception as e:
+                print(f"Error during proxy pool maintenance: {e}")
+                time.sleep(300)  # 出错后等待5分钟再尝试
+
+# 初始化代理池并开始维护
+print("Initializing proxy pool...")
+proxy_pool = FreeProxyPool()
+proxy_pool.refresh()  # 初始加载代理
+
+# 开启后台线程维护代理池
+maintenance_thread = threading.Thread(target=proxy_pool.maintain_pool, daemon=True)
+maintenance_thread.start()
+
+def run_curl_command(url, data, is_json=True, use_proxy=True):
     """
     Run a curl command to make an HTTP request.
     
@@ -162,59 +303,100 @@ def run_curl_command(url, data, is_json=True):
         url: The URL to send the request to
         data: The data to send (either JSON or raw data)
         is_json: Whether the data is JSON (if True, adds Content-Type header)
+        use_proxy: Whether to use a proxy (if False, uses direct connection)
         
     Returns:
         dict: Response data parsed as JSON or None if failed
     """
-    try:
-        # Create the curl command
-        cmd = [
-            'curl', url,
-            '-H', 'accept: */*',
-            '-H', 'accept-language: zh-CN,zh;q=0.9',
-            '-b', DUNE_COOKIES,
-            '-H', 'origin: https://dune.com',
-            '-H', 'priority: u=1, i',
-            '-H', 'referer: https://dune.com/',
-            '-H', 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
-            '-H', 'sec-ch-ua-mobile: ?0',
-            '-H', 'sec-ch-ua-platform: "macOS"',
-            '-H', 'sec-fetch-dest: empty',
-            '-H', 'sec-fetch-mode: cors',
-            '-H', 'sec-fetch-site: same-site',
-            '-H', 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
-        ]
-        
-        # Add Content-Type header if JSON
-        if is_json:
-            cmd.extend(['-H', 'content-type: application/json'])
-            
-        # Add data
-        if isinstance(data, dict) or isinstance(data, list):
-            data_str = json.dumps(data)
-            cmd.extend(['--data-raw', data_str])
-        else:
-            cmd.extend(['--data-raw', str(data)])
-        
-        print(f"Running curl command: {' '.join(cmd[:5])}... [truncated]")
-        
-        # Run the curl command
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            print(f"Error: {result.stderr}")
-            return None
-        
+    max_retries = 5
+    
+    for retry in range(max_retries):
         try:
-            return json.loads(result.stdout)
-        except Exception as e:
-            print(f"Error parsing JSON response: {e}")
-            print(f"Response: {result.stdout[:200]}...")
-            return None
+            # 创建基本curl命令
+            cmd = [
+                'curl', url,
+                '-H', 'accept: */*',
+                '-H', 'accept-language: zh-CN,zh;q=0.9',
+                '-b', DUNE_COOKIES,
+                '-H', 'origin: https://dune.com',
+                '-H', 'priority: u=1, i',
+                '-H', 'referer: https://dune.com/',
+                '-H', 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                '-H', 'sec-ch-ua-mobile: ?0',
+                '-H', 'sec-ch-ua-platform: "macOS"',
+                '-H', 'sec-fetch-dest: empty',
+                '-H', 'sec-fetch-mode: cors',
+                '-H', 'sec-fetch-site: same-site',
+                '-H', 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+                '--connect-timeout', '15'  # 设置连接超时
+            ]
             
-    except Exception as e:
-        print(f"Error running curl command: {e}")
-        return None
+            # 如果使用代理，添加代理参数
+            if use_proxy:
+                proxy = proxy_pool.get_proxy()
+                if proxy:
+                    # 提取代理地址和端口
+                    if proxy.startswith('http://'):
+                        proxy_parts = proxy[7:].split(':')
+                    elif proxy.startswith('https://'):
+                        proxy_parts = proxy[8:].split(':')
+                    else:
+                        # 跳过此次重试，获取新代理
+                        print(f"Invalid proxy format: {proxy}, retrying... ({retry+1}/{max_retries})")
+                        continue
+                        
+                    if len(proxy_parts) != 2:
+                        print(f"Invalid proxy format: {proxy}, retrying... ({retry+1}/{max_retries})")
+                        continue
+                        
+                    proxy_host = proxy_parts[0]
+                    proxy_port = proxy_parts[1]
+                    cmd.extend(['-x', f"{proxy_host}:{proxy_port}"])
+                    print(f"Using proxy: {proxy_host}:{proxy_port}")
+                else:
+                    print(f"No proxy available, trying direct connection... ({retry+1}/{max_retries})")
+            
+            # 添加Content-Type
+            if is_json:
+                cmd.extend(['-H', 'content-type: application/json'])
+                
+            # 添加数据
+            if isinstance(data, dict) or isinstance(data, list):
+                data_str = json.dumps(data)
+                cmd.extend(['--data-raw', data_str])
+            else:
+                cmd.extend(['--data-raw', str(data)])
+            
+            print(f"Running curl command: {' '.join(cmd[:5])}... [truncated]")
+            
+            # 执行curl
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"Curl command failed with return code {result.returncode}: {result.stderr}")
+                if use_proxy:
+                    print("Retrying with a different proxy...")
+                continue
+            
+            try:
+                json_response = json.loads(result.stdout)
+                return json_response
+            except json.JSONDecodeError:
+                print(f"Invalid JSON response: {result.stdout[:100]}...")
+                if "Cloudflare" in result.stdout or "cloudflare" in result.stdout.lower():
+                    print("Cloudflare detected, trying with a different proxy...")
+                continue
+                
+        except Exception as e:
+            print(f"Error during curl execution (retry {retry+1}/{max_retries}): {e}")
+    
+    # 如果所有重试都失败了，尝试直接连接（如果之前使用了代理）
+    if use_proxy:
+        print("All proxy attempts failed, trying direct connection...")
+        return run_curl_command(url, data, is_json, use_proxy=False)
+        
+    print("All retries failed")
+    return None
 
 def parse_dune_url(url):
     """

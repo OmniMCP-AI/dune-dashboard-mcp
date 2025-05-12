@@ -17,9 +17,14 @@ anyio==4.9.0
     # via mcp
     # via sse-starlette
     # via starlette
+beautifulsoup4==4.13.4
+    # via dune-dashboard-mcp
 certifi==2025.4.26
     # via httpcore
     # via httpx
+    # via requests
+charset-normalizer==3.4.2
+    # via requests
 click==8.2.0
     # via typer
     # via uvicorn
@@ -29,22 +34,24 @@ h11==0.16.0
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
+    # via dune-dashboard-mcp
     # via mcp
 httpx-sse==0.4.0
     # via mcp
 idna==3.10
     # via anyio
     # via httpx
+    # via requests
 markdown-it-py==3.0.0
     # via rich
 mcp==1.8.0
-    # via dune-analytics-mcp
+    # via dune-dashboard-mcp
 mdurl==0.1.2
     # via markdown-it-py
 numpy==2.2.5
     # via pandas
 pandas==2.2.3
-    # via dune-analytics-mcp
+    # via dune-dashboard-mcp
 pydantic==2.11.4
     # via mcp
     # via pydantic-settings
@@ -57,12 +64,15 @@ pygments==2.19.1
 python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.1.0
+    # via dune-dashboard-mcp
     # via mcp
     # via pydantic-settings
 python-multipart==0.0.20
     # via mcp
 pytz==2025.2
     # via pandas
+requests==2.32.3
+    # via dune-dashboard-mcp
 rich==14.0.0
     # via typer
 shellingham==1.5.4
@@ -71,6 +81,8 @@ six==1.17.0
     # via python-dateutil
 sniffio==1.3.1
     # via anyio
+soupsieve==2.7
+    # via beautifulsoup4
 sse-starlette==2.3.4
     # via mcp
 starlette==0.46.2
@@ -79,6 +91,7 @@ starlette==0.46.2
 typer==0.15.3
     # via mcp
 typing-extensions==4.13.2
+    # via beautifulsoup4
     # via pydantic
     # via pydantic-core
     # via typer
@@ -88,5 +101,7 @@ typing-inspection==0.4.0
     # via pydantic-settings
 tzdata==2025.2
     # via pandas
+urllib3==2.4.0
+    # via requests
 uvicorn==0.34.2
     # via mcp
