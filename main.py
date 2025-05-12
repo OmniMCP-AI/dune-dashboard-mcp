@@ -368,7 +368,7 @@ def process_visualization(visualization):
     
     return query_id, parameters, options, columns, viz_info
 
-# @mcp.tool()
+@mcp.tool()
 def get_dashboard_data(url: str) -> str:
     """
     Retrieve chart data from a Dune dashboard URL.
