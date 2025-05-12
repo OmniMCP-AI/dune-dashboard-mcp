@@ -237,8 +237,8 @@ class FreeProxyPool:
                 'http': proxy,
                 'https': proxy,
             }
-            response = requests.get(self.test_url, proxies=proxies, timeout=5)
-            
+            response = requests.get(self.test_url, proxies=proxies, timeout=2)
+
             if response.status_code == 200:
                 with self.lock:
                     self.working_proxies.add(proxy)
@@ -274,9 +274,9 @@ class FreeProxyPool:
         with self.lock:
             self.proxies.clear()
             self.working_proxies.clear()
-        
-        self.fetch_free_proxy_list()
-        self.fetch_geonode_proxies()
+
+        # self.fetch_free_proxy_list()
+        # self.fetch_geonode_proxies()
         self.fetch_proxyscrape_proxies()
         
         self.verify_proxies()
@@ -353,7 +353,7 @@ def run_curl_command(url, data, is_json=True, use_proxy=True):
                 '-H', 'sec-fetch-mode: cors',
                 '-H', 'sec-fetch-site: same-site',
                 '-H', 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
-                '--connect-timeout', '15'  # 设置连接超时
+                '--connect-timeout', '30'  # 设置连接超时
             ]
             
             # 如果使用代理，添加代理参数
