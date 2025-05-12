@@ -88,6 +88,8 @@ sse-starlette==2.3.4
 starlette==0.46.2
     # via mcp
     # via sse-starlette
+structlog==25.3.0
+    # via dune-dashboard-mcp
 typer==0.15.3
     # via mcp
 typing-extensions==4.13.2
