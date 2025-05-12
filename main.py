@@ -451,15 +451,6 @@ def get_dashboard_data(url: str) -> str:
         return json.dumps({"error": f"Failed to process dashboard: {str(e)}"})
 
 if __name__ == "__main__":
-    # print("Testing dashboard data retrieval...")
-    # result = fetch_dashboard_info("cryptokoryo", "crypto-buy-signal")
-    # if result:
-    #     print("Successfully retrieved dashboard info!")
-    #     print(json.dumps(result, indent=2)[:500] + "...")  # Print truncated result
-    # else:
-    #     print("Failed to retrieve dashboard info.")
-    
     # Uncomment to run MCP server
-    # print("Starting Dune Dashboard MCP server...")
-    # print(get_dashboard_data("https://dune.com/cryptokoryo/crypto-buy-signal"))
+    print("Starting Dune Dashboard MCP server...")
     mcp.run()

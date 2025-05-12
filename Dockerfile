@@ -4,8 +4,8 @@ FROM python:3.12-alpine
 # Set working directory
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev
+# Install build dependencies and curl
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev curl
 
 # Upgrade pip
 RUN pip install --upgrade pip
