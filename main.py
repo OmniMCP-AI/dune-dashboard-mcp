@@ -336,7 +336,7 @@ def run_curl_command(url, data, is_json=True, use_proxy=True):
     Returns:
         dict: Response data parsed as JSON or None if failed
     """
-    max_retries = 5
+    max_retries = 2
     
     for retry in range(max_retries):
         try:
@@ -356,7 +356,6 @@ def run_curl_command(url, data, is_json=True, use_proxy=True):
                 '-H', 'sec-fetch-mode: cors',
                 '-H', 'sec-fetch-site: same-site',
                 '-H', 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
-                '--connect-timeout', '30'  # 设置连接超时
             ]
             
             # 如果使用代理，添加代理参数
