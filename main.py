@@ -166,11 +166,14 @@ class FreeProxyPool:
         self.working_proxies = set()
         self.lock = threading.Lock()
         self.test_url = "https://httpbin.org/ip"  # 用来测试代理
+        self.initialized = False
+        self.initialization_thread = None
+        self.max_workers = 20  # 最大并行验证代理的线程数
         
     def fetch_free_proxy_list(self):
         """从free-proxy-list.net获取免费代理"""
         try:
-            response = requests.get('https://free-proxy-list.net/')
+            response = requests.get('https://free-proxy-list.net/', timeout=10)
             soup = BeautifulSoup(response.text, 'html.parser')
             table = soup.find('table', {'id': 'proxylisttable'})
             
@@ -188,9 +191,9 @@ class FreeProxyPool:
                 with self.lock:
                     self.proxies.add(proxy)
             
-            print(f"Added {len(self.proxies)} proxies from free-proxy-list")
+            print(f"[Proxy Pool] Added {len(self.proxies)} proxies from free-proxy-list")
         except Exception as e:
-            print(f"Error fetching from free-proxy-list: {e}")
+            print(f"[Proxy Pool] Error fetching from free-proxy-list: {e}")
     
     def fetch_geonode_proxies(self):
         """从Geonode获取免费代理"""
@@ -208,9 +211,9 @@ class FreeProxyPool:
                 with self.lock:
                     self.proxies.add(proxy_str)
                     
-            print(f"Added proxies from Geonode, total: {len(self.proxies)}")
+            print(f"[Proxy Pool] Added proxies from Geonode, total: {len(self.proxies)}")
         except Exception as e:
-            print(f"Error fetching from Geonode: {e}")
+            print(f"[Proxy Pool] Error fetching from Geonode: {e}")
 
     def fetch_proxyscrape_proxies(self):
         """从ProxyScrape获取免费代理"""
@@ -223,9 +226,9 @@ class FreeProxyPool:
                     if proxy:
                         with self.lock:
                             self.proxies.add(f"http://{proxy}")
-                print(f"Added proxies from ProxyScrape, total: {len(self.proxies)}")
+                print(f"[Proxy Pool] Added proxies from ProxyScrape, total: {len(self.proxies)}")
         except Exception as e:
-            print(f"Error fetching from ProxyScrape: {e}")
+            print(f"[Proxy Pool] Error fetching from ProxyScrape: {e}")
     
     def check_proxy(self, proxy):
         """检查代理是否可用"""
@@ -239,7 +242,7 @@ class FreeProxyPool:
             if response.status_code == 200:
                 with self.lock:
                     self.working_proxies.add(proxy)
-                    print(f"Working proxy found: {proxy}")
+                    print(f"[Proxy Pool] Working proxy found: {proxy}")
                 return True
         except:
             pass
@@ -247,18 +250,23 @@ class FreeProxyPool:
     
     def verify_proxies(self):
         """验证所有代理的可用性"""
-        print(f"Verifying {len(self.proxies)} proxies...")
+        print(f"[Proxy Pool] Verifying {len(self.proxies)} proxies...")
         
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             executor.map(self.check_proxy, list(self.proxies))
             
-        print(f"Verification complete. Working proxies: {len(self.working_proxies)}")
+        print(f"[Proxy Pool] Verification complete. Working proxies: {len(self.working_proxies)}")
     
     def get_proxy(self):
         """获取一个随机可用代理"""
         with self.lock:
             if not self.working_proxies:
-                return None
+                if self.initialized:
+                    # 如果已经初始化过，但没有工作代理，返回None
+                    return None
+                else:
+                    # 如果未初始化，返回None
+                    return None
             return random.choice(list(self.working_proxies))
     
     def refresh(self):
@@ -270,30 +278,47 @@ class FreeProxyPool:
         self.fetch_free_proxy_list()
         self.fetch_geonode_proxies()
         self.fetch_proxyscrape_proxies()
-        # 添加更多代理源...
         
         self.verify_proxies()
+        
+        with self.lock:
+            self.initialized = True
+        
+    def initialize_in_background(self):
+        """在后台线程中初始化代理池"""
+        def background_init():
+            print("[Proxy Pool] Starting background initialization...")
+            try:
+                self.refresh()
+                print(f"[Proxy Pool] Initial proxy pool populated with {len(self.working_proxies)} working proxies")
+                # 开始定期维护
+                self.maintain_pool()
+            except Exception as e:
+                print(f"[Proxy Pool] Error during background initialization: {e}")
+        
+        # 创建并启动后台线程
+        self.initialization_thread = threading.Thread(target=background_init, daemon=True)
+        self.initialization_thread.start()
         
     def maintain_pool(self, interval=1800):
         """定期维护代理池"""
         while True:
             try:
-                print("Refreshing proxy pool...")
+                # 第一次初始化已经完成，这里是后续维护
+                time.sleep(interval)  # 先等待，避免过快刷新
+                print("[Proxy Pool] Refreshing proxy pool...")
                 self.refresh()
-                print(f"Proxy pool refreshed. Sleeping for {interval} seconds...")
-                time.sleep(interval)  # 每30分钟刷新一次
+                print(f"[Proxy Pool] Proxy pool refreshed. {len(self.working_proxies)} working proxies. Sleeping for {interval} seconds...")
             except Exception as e:
-                print(f"Error during proxy pool maintenance: {e}")
+                print(f"[Proxy Pool] Error during proxy pool maintenance: {e}")
                 time.sleep(300)  # 出错后等待5分钟再尝试
 
-# 初始化代理池并开始维护
-print("Initializing proxy pool...")
+# 初始化代理池
 proxy_pool = FreeProxyPool()
-proxy_pool.refresh()  # 初始加载代理
 
-# 开启后台线程维护代理池
-maintenance_thread = threading.Thread(target=proxy_pool.maintain_pool, daemon=True)
-maintenance_thread.start()
+# 异步启动代理池初始化
+print("[Proxy Pool] Starting proxy pool in background...")
+proxy_pool.initialize_in_background()
 
 def run_curl_command(url, data, is_json=True, use_proxy=True):
     """
@@ -354,7 +379,9 @@ def run_curl_command(url, data, is_json=True, use_proxy=True):
                     cmd.extend(['-x', f"{proxy_host}:{proxy_port}"])
                     print(f"Using proxy: {proxy_host}:{proxy_port}")
                 else:
+                    # 如果代理池未初始化完成或没有可用代理，直接使用无代理连接
                     print(f"No proxy available, trying direct connection... ({retry+1}/{max_retries})")
+                    use_proxy = False
             
             # 添加Content-Type
             if is_json:
@@ -367,7 +394,8 @@ def run_curl_command(url, data, is_json=True, use_proxy=True):
             else:
                 cmd.extend(['--data-raw', str(data)])
             
-            print(f"Running curl command: {' '.join(cmd[:5])}... [truncated]")
+            # 输出更简洁的命令日志
+            print(f"Running curl to {url} (retry {retry+1}/{max_retries})")
             
             # 执行curl
             result = subprocess.run(cmd, capture_output=True, text=True)
@@ -633,6 +661,6 @@ def get_dashboard_data(url: str) -> str:
         return json.dumps({"error": f"Failed to process dashboard: {str(e)}"})
 
 if __name__ == "__main__":
-    # Uncomment to run MCP server
+    # 立即启动MCP服务器，不等待代理池初始化
     print("Starting Dune Dashboard MCP server...")
-    mcp.run()
+    mcp.run(transport="sse")
